@@ -36,6 +36,9 @@ void FModel::initializeComponentFactories() {
     component_factories["74HC86"] = []() -> std::shared_ptr<Component> {
         return std::make_shared<QuadXOR_74HC86>();
     };
+    component_factories["74HC04"] = []() -> std::shared_ptr<Component> {
+        return std::make_shared<HexInverter_74HC04>();
+    };
 }
 
 bool FModel::loadFromNetlist(const std::string& netlist_file) {
@@ -261,6 +264,25 @@ bool FModel::parseKiCadNetlist(const std::string& content) {
             size_t pin_end = nets_section.find(")", pin_start);
             std::string pin = nets_section.substr(pin_start, pin_end - pin_start);
 
+            // Use connector nodes to classify signal direction
+            if (ref.rfind("JIN_", 0) == 0) {
+                auto it = signal_map.find(net_name);
+                if (it != signal_map.end()) {
+                    it->second->is_input = true;
+                    if (it->second->is_output) {
+                        it->second->is_internal = false;
+                    }
+                }
+            } else if (ref.rfind("JOUT_", 0) == 0) {
+                auto it = signal_map.find(net_name);
+                if (it != signal_map.end()) {
+                    it->second->is_output = true;
+                    if (it->second->is_input) {
+                        it->second->is_internal = false;
+                    }
+                }
+            }
+
             // Connect only if component exists; otherwise treat as external connector
             if (component_map.find(ref) != component_map.end()) {
                 connectSignal(ref, pin, net_name);
@@ -412,24 +434,38 @@ bool FModel::parseTestVectorFile(const std::string& filename) {
             value_str.erase(value_str.find_last_not_of(" \t") + 1);
             
             LogicLevel level = stringToLogicLevel(value_str);
-            
-            // Classify inputs/outputs by naming conventions
+
+            // Prefer direction info from netlist (JIN_/JOUT_ connectors)
             bool is_input = false;
             bool is_output = false;
-            if (signal_name.find("_in") != std::string::npos) {
-                is_input = true;
+            auto sig_it = signal_map.find(signal_name);
+            if (sig_it != signal_map.end()) {
+                is_input = sig_it->second->is_input;
+                is_output = sig_it->second->is_output;
             }
-            if (signal_name == "a" || signal_name == "b" || signal_name == "cin") {
-                is_input = true;
-            }
-            if (signal_name.rfind("a_", 0) == 0 || signal_name.rfind("b_", 0) == 0) {
-                is_input = true;
-            }
-            if (signal_name == "cout" || signal_name == "sum") {
-                is_output = true;
-            }
-            if (signal_name.rfind("sum_", 0) == 0) {
-                is_output = true;
+            // Fallback to legacy heuristics only if unknown
+            if (!is_input && !is_output) {
+                if (signal_name.find("_in") != std::string::npos) {
+                    is_input = true;
+                }
+                if (signal_name == "a" || signal_name == "b" || signal_name == "cin") {
+                    is_input = true;
+                }
+                if (signal_name.rfind("a_", 0) == 0 || signal_name.rfind("b_", 0) == 0) {
+                    is_input = true;
+                }
+                if (signal_name == "cout" || signal_name == "sum") {
+                    is_output = true;
+                }
+                if (signal_name.rfind("sum_", 0) == 0) {
+                    is_output = true;
+                }
+                if (signal_name == "sel" || (signal_name.size() >= 4 && signal_name.compare(signal_name.size()-4, 4, "_sel") == 0)) {
+                    is_input = true;
+                }
+                if (signal_name == "y" || signal_name == "out" || (signal_name.size() >= 4 && signal_name.compare(signal_name.size()-4, 4, "_out") == 0)) {
+                    is_output = true;
+                }
             }
 
             if (is_input) {
@@ -558,6 +594,9 @@ void FModel::updateComponentOutputs() {
     auto isOutputPin = [](const std::string& part, int pin) {
         if (part == "74HC02") {
             return pin == 1 || pin == 4 || pin == 10 || pin == 13;
+        }
+        if (part == "74HC04") {
+            return pin == 2 || pin == 4 || pin == 6 || pin == 8 || pin == 10 || pin == 12;
         }
         // 74HC00/08/32/86 share outputs on 3,6,8,11
         return pin == 3 || pin == 6 || pin == 8 || pin == 11;

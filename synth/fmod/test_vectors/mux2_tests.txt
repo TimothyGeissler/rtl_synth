@@ -1,0 +1,26 @@
+# 2:1 MUX Test Vectors
+# y = sel ? b : a
+
+[sel=0 passes a]
+a = 0
+b = 0
+sel = 0
+y = 0
+
+[sel=0 passes a]
+a = 1
+b = 0
+sel = 0
+y = 1
+
+[sel=1 passes b]
+a = 0
+b = 1
+sel = 1
+y = 1
+
+[sel=1 passes b]
+a = 1
+b = 0
+sel = 1
+y = 0

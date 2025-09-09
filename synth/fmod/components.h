@@ -12,5 +12,6 @@
 #include "components/quad_nand_74hc00.h"
 #include "components/quad_nor_74hc02.h"
 #include "components/quad_xor_74hc86.h"
+#include "components/quad_not_74hc04.h"
 
 #endif // COMPONENTS_H

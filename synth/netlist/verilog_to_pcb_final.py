@@ -74,6 +74,7 @@ class VerilogParser:
     def __init__(self):
         self.modules: Dict[str, Module] = {}
         self.current_module: Optional[Module] = None
+        self._temp_counter: int = 0
         
     def parse_file(self, filename: str) -> Dict[str, Module]:
         """Parse a Verilog file and return module dictionary"""
@@ -250,179 +251,180 @@ class VerilogParser:
         output = output.strip()
         expression = expression.strip().rstrip(';')
         
-        # Parse the expression to determine gate type(s)
-        gates = self._parse_expression_to_gates(expression, output)
+        # Parse the expression generically into gates
+        gates = self._parse_boolean_expr_to_gates(expression, output)
         
         return gates
     
-    def _parse_expression_to_gates(self, expr: str, output: str) -> List[Gate]:
-        """Parse expression and break it down into multiple gates if needed"""
+    def _parse_boolean_expr_to_gates(self, expr: str, output: str) -> List[Gate]:
+        """Generic boolean expression parser to gates for ~, &, ^, | with parentheses.
+        Uses shunting-yard to parse into RPN, builds an AST, then lowers to 74xx gates.
+        """
+        # First, rewrite any ternary operators to boolean primitives
+        expr = self._rewrite_ternary_to_bool(expr)
+        tokens = self._tokenize_boolean_expr(expr)
+        rpn = self._shunting_yard(tokens)
+        if not rpn:
+            return []
+        ast = self._rpn_to_ast(rpn)
+        gates: List[Gate] = []
+        _ = self._ast_to_gates(ast, output, gates)
+        return gates
+
+    def _rewrite_ternary_to_bool(self, expr: str) -> str:
+        """Rewrite cond ? a : b into (cond & a) | (~cond & b), recursively for nested ternaries."""
         expr = expr.strip()
-        
-        # Handle simple expressions first
-        if '^' in expr and '&' not in expr and '|' not in expr:
-            inputs = [inp.strip() for inp in expr.split('^')]
-            if len(inputs) == 2:
-                return [Gate(
-                    gate_type='XOR',
-                    inputs=inputs,
-                    output=output,
-                    instance_name=f"XOR_2_{output}"
-                )]
-            elif len(inputs) == 3:
-                # a ^ b ^ c -> temp_x = a ^ b; output = temp_x ^ c
-                temp = f"temp_xor_{output}"
-                return [
-                    Gate(gate_type='XOR', inputs=[inputs[0], inputs[1]], output=temp, instance_name=f"XOR_2_{temp}"),
-                    Gate(gate_type='XOR', inputs=[temp, inputs[2]], output=output, instance_name=f"XOR_2_{output}")
-                ]
-            else:
-                # Fold N-ary XOR into chain
-                gates: List[Gate] = []
-                prev = inputs[0]
-                for idx in range(1, len(inputs)):
-                    last = (idx == len(inputs) - 1)
-                    out = output if last else f"tmpx_{output}_{idx}"
-                    gates.append(Gate(gate_type='XOR', inputs=[prev, inputs[idx]], output=out, instance_name=f"XOR_2_{out}"))
-                    prev = out
-                return gates
-        
-        # Handle complex expressions like (a & b) | (cin & (a ^ b))
-        if '|' in expr and '(' in expr:
-            return self._parse_complex_expression_to_gates(expr, output)
-        
-        # Handle simple AND/OR expressions
-        if '&' in expr and '|' not in expr:
-            inputs = [inp.strip() for inp in expr.split('&')]
-            return [Gate(
-                gate_type='AND',
-                inputs=inputs,
-                output=output,
-                instance_name=f"AND_{len(inputs)}_{output}"
-            )]
-        
-        if '|' in expr and '&' not in expr:
-            inputs = [inp.strip() for inp in expr.split('|')]
-            return [Gate(
-                gate_type='OR',
-                inputs=inputs,
-                output=output,
-                instance_name=f"OR_{len(inputs)}_{output}"
-            )]
-        
-        return []
+        # Quick exit
+        if '?' not in expr:
+            return expr
+        # Find top-level '?'
+        def find_top_ternary(s: str) -> Optional[Tuple[int, int, int]]:
+            depth = 0
+            q_pos = -1
+            i = 0
+            while i < len(s):
+                c = s[i]
+                if c == '(':
+                    depth += 1
+                elif c == ')':
+                    depth -= 1 if depth > 0 else 0
+                elif c == '?' and depth == 0 and q_pos == -1:
+                    q_pos = i
+                elif c == ':' and depth == 0 and q_pos != -1:
+                    # Found matching ':' for this '?'
+                    return (q_pos, i, 0)
+                i += 1
+            return None
+        # Recursive rewrite
+        def rewrite(s: str) -> str:
+            res = find_top_ternary(s)
+            if not res:
+                return s
+            q_idx, colon_idx, _ = res
+            cond = s[:q_idx].strip()
+            then_part = s[q_idx+1:colon_idx].strip()
+            else_part = s[colon_idx+1:].strip()
+            # Handle nested ternary in then/else via recursion
+            cond_r = rewrite(cond)
+            then_r = rewrite(then_part)
+            else_r = rewrite(else_part)
+            return f"(({cond_r}) & ({then_r})) | ((~({cond_r})) & ({else_r}))"
+        return rewrite(expr)
+
+    def _tokenize_boolean_expr(self, expr: str) -> List[str]:
+        tokens: List[str] = []
+        i = 0
+        while i < len(expr):
+            c = expr[i]
+            if c.isspace():
+                i += 1
+                continue
+            if c in '()~&^|':
+                tokens.append(c)
+                i += 1
+                continue
+            # identifier [a-zA-Z0-9_]
+            j = i
+            while j < len(expr) and (expr[j].isalnum() or expr[j] == '_'):
+                j += 1
+            tokens.append(expr[i:j])
+            i = j
+        return tokens
+
+    def _shunting_yard(self, tokens: List[str]) -> List[str]:
+        # Precedence: ~ > & > ^ > |
+        prec = {'~': 4, '&': 3, '^': 2, '|': 1}
+        right_assoc = {'~'}
+        output: List[str] = []
+        ops: List[str] = []
+        i = 0
+        while i < len(tokens):
+            t = tokens[i]
+            if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', t):
+                output.append(t)
+            elif t == '(':
+                ops.append(t)
+            elif t == ')':
+                while ops and ops[-1] != '(':
+                    output.append(ops.pop())
+                if ops and ops[-1] == '(':
+                    ops.pop()
+            elif t in prec:
+                # Handle unary ~ (could appear multiple times)
+                while ops and ops[-1] in prec and (
+                    (ops[-1] not in right_assoc and prec[ops[-1]] >= prec[t]) or
+                    (ops[-1] in right_assoc and prec[ops[-1]] > prec[t])
+                ):
+                    output.append(ops.pop())
+                ops.append(t)
+            i += 1
+        while ops:
+            output.append(ops.pop())
+        return output
+
+    def _rpn_to_ast(self, rpn: List[str]):
+        stack: List[Any] = []
+        for t in rpn:
+            if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', t):
+                stack.append(('id', t))
+            elif t == '~':
+                a = stack.pop()
+                stack.append(('not', a))
+            elif t in ('&', '^', '|'):
+                b = stack.pop(); a = stack.pop()
+                op_map = {'&': 'and', '^': 'xor', '|': 'or'}
+                stack.append((op_map[t], a, b))
+        return stack[-1] if stack else None
+
+    def _new_temp(self, base: str) -> str:
+        self._temp_counter += 1
+        return f"tmp_{base}_{self._temp_counter}"
+
+    def _ast_to_gates(self, node, target: str, acc: List[Gate]) -> str:
+        """Lower AST to 2-input gates; return the signal name producing node's value.
+        The final result is wired to 'target'.
+        """
+        if node is None:
+            return target
+        kind = node[0]
+        if kind == 'id':
+            src = node[1]
+            # Connect via a buffer (no gate); ensure final output uses src directly
+            if target != src:
+                # Implement as XOR with 0? Better: emit a single-wire assignment by naming convention
+                # We'll just return src so caller can wire it
+                return src
+            return target
+        if kind == 'not':
+            a_sig = self._ast_to_gates(node[1], self._new_temp('n'), acc)
+            acc.append(Gate(gate_type='NOT', inputs=[a_sig], output=target, instance_name=f"NOT_1_{target}"))
+            return target
+        # Binary ops
+        op_map = {
+            'and': 'AND',
+            'or': 'OR',
+            'xor': 'XOR'
+        }
+        left_sig = self._ast_to_gates(node[1], self._new_temp('l'), acc)
+        right_sig = self._ast_to_gates(node[2], self._new_temp('r'), acc)
+        acc.append(Gate(gate_type=op_map[kind], inputs=[left_sig, right_sig], output=target, instance_name=f"{op_map[kind]}_2_{target}"))
+        return target
     
     def _parse_complex_expression_to_gates(self, expr: str, output: str) -> List[Gate]:
-        """Parse complex expressions and break them into multiple gates"""
-        # For now, handle the specific case: (a & b) | (cin & (a ^ b))
-        if expr == "(a & b) | (cin & (a ^ b))":
-            # This needs to be broken down into multiple gates
-            # We'll create intermediate signals and multiple gates
-            gates = []
-            
-            # Gate 1: a & b -> temp1
-            gates.append(Gate(
-                gate_type='AND',
-                inputs=['a', 'b'],
-                output='temp1',
-                instance_name='AND_2_temp1'
-            ))
-            
-            # Gate 2: a ^ b -> temp2  
-            gates.append(Gate(
-                gate_type='XOR',
-                inputs=['a', 'b'],
-                output='temp2',
-                instance_name='XOR_2_temp2'
-            ))
-            
-            # Gate 3: cin & temp2 -> temp3
-            gates.append(Gate(
-                gate_type='AND',
-                inputs=['cin', 'temp2'],
-                output='temp3',
-                instance_name='AND_2_temp3'
-            ))
-            
-            # Gate 4: temp1 | temp3 -> output
-            gates.append(Gate(
-                gate_type='OR',
-                inputs=['temp1', 'temp3'],
-                output=output,
-                instance_name='OR_2_cout'
-            ))
-            
-            return gates
-        
-        # For other complex expressions, try to parse as single gate
-        gate_type, inputs = self._parse_expression(expr)
-        if gate_type:
-            return [Gate(
-                gate_type=gate_type,
-                inputs=inputs,
-                output=output,
-                instance_name=f"{gate_type}_{len(inputs)}_{output}"
-            )]
-        
-        return []
+        """Backward-compat shim: use the generic boolean expression parser."""
+        return self._parse_boolean_expr_to_gates(expr, output)
     
     def _parse_expression(self, expr: str) -> Tuple[Optional[str], List[str]]:
-        """Parse expression and determine gate type and inputs"""
-        expr = expr.strip()
-        
-        # Handle parentheses and complex expressions
-        if '(' in expr and ')' in expr:
-            return self._parse_complex_expression(expr)
-        
-        # Simple operations
-        if '^' in expr:
-            inputs = [inp.strip() for inp in expr.split('^')]
-            return 'XOR', inputs
-        elif '&' in expr:
-            inputs = [inp.strip() for inp in expr.split('&')]
-            return 'AND', inputs
-        elif '|' in expr:
-            inputs = [inp.strip() for inp in expr.split('|')]
-            return 'OR', inputs
-        elif '~' in expr:
-            # NOT gate
-            input_signal = expr.replace('~', '').strip()
-            return 'NOT', [input_signal]
-        
-        return None, []
+        """Deprecated: retained for compatibility. Use _parse_boolean_expr_to_gates instead."""
+        gates = self._parse_boolean_expr_to_gates(expr, 'tmp_out')
+        if not gates:
+            return None, []
+        g = gates[-1]
+        return g.gate_type, g.inputs
     
     def _parse_complex_expression(self, expr: str) -> Tuple[Optional[str], List[str]]:
-        """Parse complex expressions with parentheses"""
-        # Remove outer parentheses if present
-        if expr.startswith('(') and expr.endswith(')'):
-            expr = expr[1:-1]
-        
-        # Look for OR of AND terms (like (a & b) | (c & d))
-        if '|' in expr:
-            or_terms = [term.strip() for term in expr.split('|')]
-            # This is a complex OR gate - for now, treat as OR
-            all_inputs = []
-            for term in or_terms:
-                # Clean up parentheses and whitespace
-                term = term.strip()
-                if term.startswith('(') and term.endswith(')'):
-                    term = term[1:-1]
-                
-                if '&' in term:
-                    and_inputs = [inp.strip() for inp in term.split('&')]
-                    # Clean up each input
-                    cleaned_inputs = []
-                    for inp in and_inputs:
-                        inp = inp.strip()
-                        if inp.startswith('(') and inp.endswith(')'):
-                            inp = inp[1:-1]
-                        cleaned_inputs.append(inp)
-                    all_inputs.extend(cleaned_inputs)
-                else:
-                    all_inputs.append(term)
-            return 'OR', all_inputs
-        
-        return None, []
+        """Deprecated shim to maintain interface; map to generic parser."""
+        return self._parse_expression(expr)
     
     def _parse_module_instantiation(self, line: str) -> Optional[ModuleInstance]:
         """Parse module instantiation"""
@@ -622,6 +624,18 @@ class GateToICMapper:
 class KiCadNetlistExporter:
     """KiCad netlist exporter for PCB import"""
     
+    def _merge_signals_by_name(self, signals: List[Signal]) -> List[Signal]:
+        """Deduplicate ports by name, keeping the widest declaration.
+        Prevents emitting both aggregate (e.g., JIN_a) and bit-sliced (JIN_a_0..n) connectors.
+        """
+        merged: Dict[str, Signal] = {}
+        for sig in signals:
+            # Prefer the signal with the larger width for a given base name
+            existing = merged.get(sig.name)
+            if existing is None or (sig.width or 1) > (existing.width or 1):
+                merged[sig.name] = sig
+        return list(merged.values())
+    
     def export_netlist(self, module: Module, ic_instances: List[ICInstance], output_file: str):
         """Export KiCad netlist format (.net file)"""
         with open(output_file, 'w') as f:
@@ -637,7 +651,9 @@ class KiCadNetlistExporter:
             f.write("  (components\n")
             # I/O connectors (one-pin) with de-duplication
             seen_refs = set()
-            for sig in module.inputs:
+            inputs = self._merge_signals_by_name(module.inputs)
+            outputs = self._merge_signals_by_name(module.outputs)
+            for sig in inputs:
                 if sig.width and sig.width > 1:
                     for i in range(sig.width):
                         ref = f"JIN_{sig.name}_{i}"
@@ -650,7 +666,7 @@ class KiCadNetlistExporter:
                     if ref not in seen_refs:
                         self._write_connector_component(f, ref=ref, value="Conn_01x01", package="DIP-1")
                         seen_refs.add(ref)
-            for sig in module.outputs:
+            for sig in outputs:
                 if sig.width and sig.width > 1:
                     for i in range(sig.width):
                         ref = f"JOUT_{sig.name}_{i}"
@@ -713,13 +729,13 @@ class KiCadNetlistExporter:
         nets = defaultdict(set)
         
         # Add input/output nets to connector pins (pin 1)
-        for signal in module.inputs:
+        for signal in self._merge_signals_by_name(module.inputs):
             if signal.width and signal.width > 1:
                 for i in range(signal.width):
                     nets[f"{signal.name}_{i}"].add((f'JIN_{signal.name}_{i}', '1'))
             else:
                 nets[signal.name].add((f'JIN_{signal.name}', '1'))
-        for signal in module.outputs:
+        for signal in self._merge_signals_by_name(module.outputs):
             if signal.width and signal.width > 1:
                 for i in range(signal.width):
                     nets[f"{signal.name}_{i}"].add((f'JOUT_{signal.name}_{i}', '1'))
@@ -973,8 +989,19 @@ def main():
         for name, module in modules.items():
             print(f"  - {name}: {len(module.inputs)} inputs, {len(module.outputs)} outputs, {len(module.gates)} gates, {len(module.instances)} instances")
     
-    # Process each module
-    for name, module in modules.items():
+    # Determine top-level module: a module that is not instantiated by any other
+    instantiated: Set[str] = set()
+    for m in modules.values():
+        for inst in m.instances:
+            instantiated.add(inst.module_name)
+    top_modules = [m for m in modules.values() if m.name not in instantiated]
+    if not top_modules:
+        # Fallback: use the first module
+        top_modules = [next(iter(modules.values()))]
+    
+    # Process only the top-level module
+    for module in top_modules:
+        name = module.name
         if args.verbose:
             print(f"\nProcessing module: {name}")
         
