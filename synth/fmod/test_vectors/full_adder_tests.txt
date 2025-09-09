@@ -1,0 +1,61 @@
+# Full Adder Test Vectors
+# Format: [Test Description]
+# signal_name = value (0=LOW, 1=HIGH)
+# Input signals: a, b, cin
+# Output signals: sum, cout
+
+[Basic Addition - No Carry]
+a = 0
+b = 0
+cin = 0
+sum = 0
+cout = 0
+
+[Basic Addition - Simple Carry]
+a = 0
+b = 1
+cin = 0
+sum = 1
+cout = 0
+
+[Basic Addition - Input Carry]
+a = 0
+b = 0
+cin = 1
+sum = 1
+cout = 0
+
+[Basic Addition - Both Inputs]
+a = 1
+b = 1
+cin = 0
+sum = 0
+cout = 1
+
+[Full Carry Chain]
+a = 1
+b = 1
+cin = 1
+sum = 1
+cout = 1
+
+[Single Input with Carry]
+a = 1
+b = 0
+cin = 1
+sum = 0
+cout = 1
+
+[Other Single Input with Carry]
+a = 0
+b = 1
+cin = 1
+sum = 0
+cout = 1
+
+[All Ones]
+a = 1
+b = 1
+cin = 1
+sum = 1
+cout = 1

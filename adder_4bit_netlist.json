@@ -1,0 +1,118 @@
+{
+  "module_name": "adder_4bit",
+  "inputs": [
+    {
+      "name": "a",
+      "width": 1
+    },
+    {
+      "name": "b",
+      "width": 1
+    },
+    {
+      "name": "cin",
+      "width": 1
+    }
+  ],
+  "outputs": [
+    {
+      "name": "sum",
+      "width": 1
+    },
+    {
+      "name": "cout",
+      "width": 1
+    }
+  ],
+  "ic_instances": [
+    {
+      "instance_id": "U1",
+      "part_number": "74HC86",
+      "package": "DIP-14",
+      "pin_assignments": {
+        "1": "a",
+        "2": "b",
+        "3": "sum",
+        "4": "a",
+        "5": "b",
+        "6": "temp2",
+        "14": "VCC",
+        "7": "GND"
+      },
+      "gates": [
+        {
+          "type": "XOR",
+          "inputs": [
+            "a",
+            "b",
+            "cin"
+          ],
+          "output": "sum"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "a",
+            "b"
+          ],
+          "output": "temp2"
+        }
+      ]
+    },
+    {
+      "instance_id": "U2",
+      "part_number": "74HC08",
+      "package": "DIP-14",
+      "pin_assignments": {
+        "1": "a",
+        "2": "b",
+        "3": "temp1",
+        "4": "cin",
+        "5": "temp2",
+        "6": "temp3",
+        "14": "VCC",
+        "7": "GND"
+      },
+      "gates": [
+        {
+          "type": "AND",
+          "inputs": [
+            "a",
+            "b"
+          ],
+          "output": "temp1"
+        },
+        {
+          "type": "AND",
+          "inputs": [
+            "cin",
+            "temp2"
+          ],
+          "output": "temp3"
+        }
+      ]
+    },
+    {
+      "instance_id": "U3",
+      "part_number": "74HC32",
+      "package": "DIP-14",
+      "pin_assignments": {
+        "1": "temp1",
+        "2": "temp3",
+        "3": "cout",
+        "14": "VCC",
+        "7": "GND"
+      },
+      "gates": [
+        {
+          "type": "OR",
+          "inputs": [
+            "temp1",
+            "temp3"
+          ],
+          "output": "cout"
+        }
+      ]
+    }
+  ]
+}

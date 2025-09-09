@@ -1,0 +1,250 @@
+$date
+	Mon Sep  8 21:42:10 2025
+$end
+$version
+	Icarus Verilog
+$end
+$timescale
+	1ps
+$end
+$scope module adder4b_tb $end
+$var wire 4 ! sum [3:0] $end
+$var wire 1 " cout $end
+$var reg 4 # a [3:0] $end
+$var reg 5 $ actual_result [4:0] $end
+$var reg 4 % b [3:0] $end
+$var reg 1 & cin $end
+$var reg 5 ' expected_result [4:0] $end
+$scope module dut $end
+$var wire 4 ( a [3:0] $end
+$var wire 4 ) b [3:0] $end
+$var wire 1 & cin $end
+$var wire 4 * sum [3:0] $end
+$var wire 1 " cout $end
+$var wire 1 + c3 $end
+$var wire 1 , c2 $end
+$var wire 1 - c1 $end
+$scope module fa0 $end
+$var wire 1 . a $end
+$var wire 1 / b $end
+$var wire 1 & cin $end
+$var wire 1 - cout $end
+$var wire 1 0 sum $end
+$upscope $end
+$scope module fa1 $end
+$var wire 1 1 a $end
+$var wire 1 2 b $end
+$var wire 1 - cin $end
+$var wire 1 , cout $end
+$var wire 1 3 sum $end
+$upscope $end
+$scope module fa2 $end
+$var wire 1 4 a $end
+$var wire 1 5 b $end
+$var wire 1 , cin $end
+$var wire 1 + cout $end
+$var wire 1 6 sum $end
+$upscope $end
+$scope module fa3 $end
+$var wire 1 7 a $end
+$var wire 1 8 b $end
+$var wire 1 + cin $end
+$var wire 1 " cout $end
+$var wire 1 9 sum $end
+$upscope $end
+$upscope $end
+$scope task check_result $end
+$var reg 81 : test_name [80:0] $end
+$upscope $end
+$upscope $end
+$enddefinitions $end
+#0
+$dumpvars
+bx :
+09
+08
+07
+06
+05
+04
+03
+02
+01
+00
+0/
+0.
+0-
+0,
+0+
+b0 *
+b0 )
+b0 (
+bx '
+0&
+b0 %
+bx $
+b0 #
+0"
+b0 !
+$end
+#10000
+b10 !
+b10 *
+13
+1-
+1/
+1.
+b1 %
+b1 )
+b1 #
+b1 (
+b10000100110000101110011011010010110001100100000001100000010101100110000 :
+b0 $
+b0 '
+#20000
+b11 !
+b11 *
+10
+1&
+b1010011011010010110110101110000011011000110010100100000001100010010101100110001 :
+b10 $
+b10 '
+#30000
+19
+1+
+1,
+03
+06
+b1000 !
+b1000 *
+00
+11
+14
+0&
+b111 #
+b111 (
+b101100001011100100111001001111001001000000011000100101011001100010010101100110001 :
+b11 $
+b11 '
+#40000
+1"
+b0 !
+b0 *
+09
+17
+b1111 #
+b1111 (
+b10011010110000101111000001011010011000100100000001010110010000000110001 :
+b1000 $
+b1000 '
+#50000
+13
+16
+19
+b1111 !
+b1111 *
+10
+12
+15
+18
+1&
+b1111 %
+b1111 )
+b101110010011001100110110001101111011101110010000000110001001101010010101100110001 :
+b10000 $
+b10000 '
+#60000
+0"
+0+
+0,
+19
+0-
+16
+b1111 !
+b1111 *
+10
+02
+08
+0.
+04
+0&
+b101 %
+b101 )
+b1010 #
+b1010 (
+b1101111011101110010000000110001001101010010101100110001001101010010101100110001 :
+b11111 $
+b11111 '
+#70000
+1"
+09
+1+
+06
+1,
+03
+1-
+b0 !
+b0 *
+00
+12
+05
+01
+14
+1&
+b11 %
+b11 )
+b1100 #
+b1100 (
+b1100001011011100110010001101111011011010010000000110001001100000010101100110101 :
+b1111 $
+b1111 '
+#80000
+0"
+19
+0+
+16
+0,
+13
+0-
+b1111 !
+b1111 *
+10
+02
+15
+11
+04
+0&
+b101 %
+b101 )
+b1010 #
+b1010 (
+b1100100011011110110110100100000001100010011001000101011001100110010101100110001 :
+b10000 $
+b10000 '
+#90000
+1"
+09
+1+
+06
+1,
+03
+1-
+b0 !
+b0 *
+00
+0/
+05
+1.
+14
+1&
+b0 %
+b0 )
+b1111 #
+b1111 (
+b100000001100010011000000110001001100000010101100110000001100010011000000110001 :
+b1111 $
+b1111 '
+#100000
+b100110001001100010011000100101011001100000011000000110000001100000010101100110001 :
+b10000 $
+b10000 '
