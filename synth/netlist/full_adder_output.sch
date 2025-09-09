@@ -47,27 +47,33 @@ F 3 "" H 1000 2650 50  0000 C CNN
     1    0    0    -1
 $EndComp
 Wire Wire Line
-    900 800 900 800
+    900 800 500 1000
 Wire Wire Line
-    900 850 900 850
+    900 850 500 1200
 Wire Wire Line
     900 900 900 900
 Wire Wire Line
-    900 950 900 800
+    900 950 900 900
 Wire Wire Line
-    900 1000 900 850
+    900 1000 500 1400
 Wire Wire Line
-    900 1050 900 1050
+    900 1050 5000 1000
 Wire Wire Line
-    2900 800 900 800
+    1100 1050 500 1000
 Wire Wire Line
-    2900 850 900 850
+    1100 1000 500 1200
+Wire Wire Line
+    1100 1100 1100 1100
+Wire Wire Line
+    2900 800 500 1000
+Wire Wire Line
+    2900 850 500 1200
 Wire Wire Line
     2900 900 2900 900
 Wire Wire Line
-    2900 950 2900 950
+    2900 950 500 1400
 Wire Wire Line
-    2900 1000 900 1050
+    2900 1000 1100 1100
 Wire Wire Line
     2900 1050 2900 1050
 Wire Wire Line
@@ -75,5 +81,5 @@ Wire Wire Line
 Wire Wire Line
     900 2350 2900 1050
 Wire Wire Line
-    900 2400 900 2400
+    900 2400 5000 1200
 $EndSCHEMATC

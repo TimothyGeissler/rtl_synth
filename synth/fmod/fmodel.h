@@ -16,6 +16,7 @@
 #include <functional>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 // Forward declarations for component classes
 class Component;
@@ -159,6 +160,7 @@ private:
     void initializeComponentFactories();
     std::shared_ptr<Component> createComponent(const std::string& part_number);
     bool parseNetlistFile(const std::string& filename);
+    bool parseKiCadNetlist(const std::string& content);
     bool parseTestVectorFile(const std::string& filename);
     void updateComponentOutputs();
     void propagateSignals();

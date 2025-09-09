@@ -1,61 +1,120 @@
 # 4-bit Adder Test Vectors
 # Format: [Test Description]
 # signal_name = value (0=LOW, 1=HIGH)
-# Note: This is a simplified test for the basic adder structure
-# In a real 4-bit adder, you'd have a[3:0], b[3:0], sum[3:0], cout
+# Updated to use flattened bus bit names: a_0..a_3, b_0..b_3, sum_0..sum_3, cin, cout
 
-[Basic Addition - No Carry]
-a = 0
-b = 0
+[Bit0: 0+0, no carry]
+a_0 = 0
+a_1 = 0
+a_2 = 0
+a_3 = 0
+b_0 = 0
+b_1 = 0
+b_2 = 0
+b_3 = 0
 cin = 0
-sum = 0
+sum_0 = 0
 cout = 0
 
-[Basic Addition - Simple Carry]
-a = 0
-b = 1
+[Bit0: 0+1, no carry]
+a_0 = 0
+a_1 = 0
+a_2 = 0
+a_3 = 0
+b_0 = 1
+b_1 = 0
+b_2 = 0
+b_3 = 0
 cin = 0
-sum = 1
+sum_0 = 1
 cout = 0
 
-[Basic Addition - Input Carry]
-a = 0
-b = 0
+[Bit0: 0+0 with carry-in]
+a_0 = 0
+a_1 = 0
+a_2 = 0
+a_3 = 0
+b_0 = 0
+b_1 = 0
+b_2 = 0
+b_3 = 0
 cin = 1
-sum = 1
+sum_0 = 1
 cout = 0
 
-[Basic Addition - Both Inputs]
-a = 1
-b = 1
+[Bit0: 1+1, carry out]
+a_0 = 1
+a_1 = 0
+a_2 = 0
+a_3 = 0
+b_0 = 1
+b_1 = 0
+b_2 = 0
+b_3 = 0
 cin = 0
-sum = 0
+sum_0 = 0
+cout = 0
+
+[4-bit: 0000 + 0000]
+a_0 = 0
+a_1 = 0
+a_2 = 0
+a_3 = 0
+b_0 = 0
+b_1 = 0
+b_2 = 0
+b_3 = 0
+cin = 0
+sum_0 = 0
+sum_1 = 0
+sum_2 = 0
+sum_3 = 0
+cout = 0
+
+[4-bit: 0001 + 0001]
+a_0 = 1
+a_1 = 0
+a_2 = 0
+a_3 = 0
+b_0 = 1
+b_1 = 0
+b_2 = 0
+b_3 = 0
+cin = 0
+sum_0 = 0
+sum_1 = 1
+sum_2 = 0
+sum_3 = 0
+cout = 0
+
+[4-bit: 1111 + 0001]
+a_0 = 1
+a_1 = 1
+a_2 = 1
+a_3 = 1
+b_0 = 1
+b_1 = 0
+b_2 = 0
+b_3 = 0
+cin = 0
+sum_0 = 0
+sum_1 = 0
+sum_2 = 0
+sum_3 = 0
 cout = 1
 
-[Full Carry Chain]
-a = 1
-b = 1
-cin = 1
-sum = 1
-cout = 1
-
-[Single Input with Carry]
-a = 1
-b = 0
-cin = 1
-sum = 0
-cout = 1
-
-[Other Single Input with Carry]
-a = 0
-b = 1
-cin = 1
-sum = 0
-cout = 1
-
-[All Ones]
-a = 1
-b = 1
-cin = 1
-sum = 1
-cout = 1
+[4-bit: 1010 + 0101]
+a_0 = 0
+a_1 = 1
+a_2 = 0
+a_3 = 1
+b_0 = 1
+b_1 = 0
+b_2 = 1
+b_3 = 0
+cin = 0
+sum_0 = 1
+sum_1 = 1
+sum_2 = 1
+sum_3 = 1
+cout = 0

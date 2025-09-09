@@ -148,18 +148,28 @@ class VerilogParser:
     
     def _parse_ports(self, module: Module, port_list: str, body: str):
         """Parse module ports"""
-        # Extract port names from port list
-        ports = [p.strip() for p in port_list.split(',') if p.strip()]
+        # Prefer ANSI-style ports declared in the header (port_list)
+        header = port_list.replace('\n', ' ')
+        # Match sequences like: input [3:0] a or output cout
+        for m in re.finditer(r'(input|output)\s+(?:\[(\d+):(\d+)\]\s+)?(\w+)', header, re.IGNORECASE):
+            direction = m.group(1).lower()
+            msb = int(m.group(2)) if m.group(2) else 0
+            lsb = int(m.group(3)) if m.group(3) else 0
+            name = m.group(4)
+            width = abs(msb - lsb) + 1 if m.group(2) else 1
+            sig = Signal(name=name, width=width, is_input=(direction=='input'), is_output=(direction=='output'))
+            if sig.is_input:
+                module.inputs.append(sig)
+            else:
+                module.outputs.append(sig)
         
-        # Find port declarations in body
+        # Also support non-ANSI style (declared in body)
         for line in body.split('\n'):
             line = line.strip()
             if not line or line.startswith('//'):
                 continue
-                
-            # Look for input/output declarations
             if re.match(r'(input|output)\s+', line, re.IGNORECASE):
-                self._parse_port_declaration(module, line, ports)
+                self._parse_port_declaration(module, line, [])
     
     def _parse_port_declaration(self, module: Module, line: str, ports: List[str]):
         """Parse a single port declaration line"""
@@ -252,12 +262,30 @@ class VerilogParser:
         # Handle simple expressions first
         if '^' in expr and '&' not in expr and '|' not in expr:
             inputs = [inp.strip() for inp in expr.split('^')]
-            return [Gate(
-                gate_type='XOR',
-                inputs=inputs,
-                output=output,
-                instance_name=f"XOR_{len(inputs)}_{output}"
-            )]
+            if len(inputs) == 2:
+                return [Gate(
+                    gate_type='XOR',
+                    inputs=inputs,
+                    output=output,
+                    instance_name=f"XOR_2_{output}"
+                )]
+            elif len(inputs) == 3:
+                # a ^ b ^ c -> temp_x = a ^ b; output = temp_x ^ c
+                temp = f"temp_xor_{output}"
+                return [
+                    Gate(gate_type='XOR', inputs=[inputs[0], inputs[1]], output=temp, instance_name=f"XOR_2_{temp}"),
+                    Gate(gate_type='XOR', inputs=[temp, inputs[2]], output=output, instance_name=f"XOR_2_{output}")
+                ]
+            else:
+                # Fold N-ary XOR into chain
+                gates: List[Gate] = []
+                prev = inputs[0]
+                for idx in range(1, len(inputs)):
+                    last = (idx == len(inputs) - 1)
+                    out = output if last else f"tmpx_{output}_{idx}"
+                    gates.append(Gate(gate_type='XOR', inputs=[prev, inputs[idx]], output=out, instance_name=f"XOR_2_{out}"))
+                    prev = out
+                return gates
         
         # Handle complex expressions like (a & b) | (cin & (a ^ b))
         if '|' in expr and '(' in expr:
@@ -398,7 +426,7 @@ class VerilogParser:
     
     def _parse_module_instantiation(self, line: str) -> Optional[ModuleInstance]:
         """Parse module instantiation"""
-        # Match pattern: module_name instance_name (connections);
+        # Match pattern: module_name instance_name ( .port(signal), ... );
         match = re.match(r'(\w+)\s+(\w+)\s*\((.*?)\);', line, re.DOTALL)
         if match:
             module_name = match.group(1)
@@ -406,14 +434,11 @@ class VerilogParser:
             connections_str = match.group(3)
             
             # Parse connections
-            connections = {}
-            for conn in connections_str.split(','):
-                conn = conn.strip()
-                if '.' in conn:
-                    port, signal = conn.split('.', 1)
-                    port = port.strip()
-                    signal = signal.strip()
-                    connections[port] = signal
+            connections: Dict[str, str] = {}
+            for pm in re.finditer(r'\.(\w+)\s*\(\s*([^\)]+)\s*\)', connections_str):
+                port = pm.group(1)
+                signal = pm.group(2)
+                connections[port] = signal
             
             return ModuleInstance(
                 module_name=module_name,
@@ -422,6 +447,60 @@ class VerilogParser:
             )
         
         return None
+
+def sanitize_signal_name(name: str) -> str:
+    # Convert bus refs like a[0] -> a_0
+    name = name.strip()
+    name = name.replace('[', '_').replace(']', '')
+    name = name.replace(':', '_')
+    return name
+
+def flatten_module_gates(module: Module, modules: Dict[str, Module]) -> List[Gate]:
+    flat: List[Gate] = []
+    # If this module has no instances, copy local gates; otherwise rely on flattened instances
+    if not module.instances:
+        for g in module.gates:
+            new_g = Gate(gate_type=g.gate_type,
+                         inputs=[sanitize_signal_name(s) for s in g.inputs],
+                         output=sanitize_signal_name(g.output),
+                         instance_name=g.instance_name)
+            flat.append(new_g)
+    # Inline submodules
+    port_names_in = set(s.name for s in module.inputs)
+    port_names_out = set(s.name for s in module.outputs)
+    for inst in module.instances:
+        if inst.module_name not in modules:
+            continue
+        sub = modules[inst.module_name]
+        sub_gates = flatten_module_gates(sub, modules)
+        # Build port mapping from submodule port name -> connected net (sanitized)
+        port_map: Dict[str, str] = {}
+        for k, v in inst.connections.items():
+            # k is port name, v is signal (maybe bus)
+            port_map[k] = sanitize_signal_name(v)
+        # Determine submodule's ports sets
+        sub_ports_in = set(s.name for s in sub.inputs)
+        sub_ports_out = set(s.name for s in sub.outputs)
+        for g in sub_gates:
+            mapped_inputs: List[str] = []
+            for s in g.inputs:
+                base = s
+                # Map through ports if present
+                if base in port_map:
+                    mapped_inputs.append(port_map[base])
+                else:
+                    # Instance-local internal -> prefix with instance name
+                    mapped_inputs.append(f"{inst.instance_name}_{base}")
+            out_base = g.output
+            if out_base in port_map:
+                out_sig = port_map[out_base]
+            else:
+                out_sig = f"{inst.instance_name}_{out_base}"
+            flat.append(Gate(gate_type=g.gate_type,
+                             inputs=mapped_inputs,
+                             output=out_sig,
+                             instance_name=f"{inst.instance_name}_{g.instance_name}"))
+    return flat
 
 class GateToICMapper:
     """Gate-to-IC mapper with proper pin assignments"""
@@ -556,6 +635,34 @@ class KiCadNetlistExporter:
             
             # Write components
             f.write("  (components\n")
+            # I/O connectors (one-pin) with de-duplication
+            seen_refs = set()
+            for sig in module.inputs:
+                if sig.width and sig.width > 1:
+                    for i in range(sig.width):
+                        ref = f"JIN_{sig.name}_{i}"
+                        if ref in seen_refs: continue
+                        self._write_connector_component(f, ref=ref, value="Conn_01x01", package="DIP-1")
+                        seen_refs.add(ref)
+                else:
+                    # Always add scalar connectors (e.g., cin)
+                    ref = f"JIN_{sig.name}"
+                    if ref not in seen_refs:
+                        self._write_connector_component(f, ref=ref, value="Conn_01x01", package="DIP-1")
+                        seen_refs.add(ref)
+            for sig in module.outputs:
+                if sig.width and sig.width > 1:
+                    for i in range(sig.width):
+                        ref = f"JOUT_{sig.name}_{i}"
+                        if ref in seen_refs: continue
+                        self._write_connector_component(f, ref=ref, value="Conn_01x01", package="DIP-1")
+                        seen_refs.add(ref)
+                else:
+                    # Always add scalar connectors (e.g., cout)
+                    ref = f"JOUT_{sig.name}"
+                    if ref not in seen_refs:
+                        self._write_connector_component(f, ref=ref, value="Conn_01x01", package="DIP-1")
+                        seen_refs.add(ref)
             for ic in ic_instances:
                 self._write_component_netlist(f, ic)
             f.write("  )\n")
@@ -582,42 +689,69 @@ class KiCadNetlistExporter:
         f.write(f"      (sheetpath (names \"/\") (tstamps \"/\"))\n")
         f.write(f"      (tstamp {self._generate_timestamp()})\n")
         f.write(f"    )\n")
+
+    def _write_connector_component(self, f, ref: str, value: str, package: str):
+        """Write a 1-pin connector as a component for I/O"""
+        f.write(f"    (comp (ref {ref})\n")
+        f.write(f"      (value {value})\n")
+        # Use a default KiCad footprint that exists in standard libs
+        f.write(f"      (footprint Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical)\n")
+        f.write(f"      (datasheet \"\")\n")
+        f.write(f"      (fields\n")
+        f.write(f"        (field (name F0) \"{ref}\")\n")
+        f.write(f"        (field (name F1) \"{value}\")\n")
+        f.write(f"        (field (name F2) \"{package}\")\n")
+        f.write(f"      )\n")
+        f.write(f"      (libsource (lib \"Connector_Generic\") (part \"{value}\"))\n")
+        f.write(f"      (sheetpath (names \"/\") (tstamps \"/\"))\n")
+        f.write(f"      (tstamp {self._generate_timestamp()})\n")
+        f.write(f"    )\n")
     
     def _write_nets(self, f, module: Module, ic_instances: List[ICInstance]):
         """Write net definitions"""
         # Collect all nets and their connections
-        nets = defaultdict(list)
+        nets = defaultdict(set)
         
-        # Add input/output nets
-        for signal in module.inputs + module.outputs:
-            nets[signal.name].append(('CONN', signal.name))
+        # Add input/output nets to connector pins (pin 1)
+        for signal in module.inputs:
+            if signal.width and signal.width > 1:
+                for i in range(signal.width):
+                    nets[f"{signal.name}_{i}"].add((f'JIN_{signal.name}_{i}', '1'))
+            else:
+                nets[signal.name].add((f'JIN_{signal.name}', '1'))
+        for signal in module.outputs:
+            if signal.width and signal.width > 1:
+                for i in range(signal.width):
+                    nets[f"{signal.name}_{i}"].add((f'JOUT_{signal.name}_{i}', '1'))
+            else:
+                nets[signal.name].add((f'JOUT_{signal.name}', '1'))
         
         # Add internal nets from IC pin assignments
         for ic in ic_instances:
             for pin, signal in ic.pin_assignments.items():
                 if signal not in ['VCC', 'GND']:
-                    nets[signal].append((ic.instance_id, pin))
+                    nets[signal].add((ic.instance_id, pin))
         
         # Add power nets
-        vcc_connections = []
-        gnd_connections = []
+        vcc_connections = set()
+        gnd_connections = set()
         for ic in ic_instances:
             for pin, signal in ic.pin_assignments.items():
                 if signal == 'VCC':
-                    vcc_connections.append((ic.instance_id, pin))
+                    vcc_connections.add((ic.instance_id, pin))
                 elif signal == 'GND':
-                    gnd_connections.append((ic.instance_id, pin))
+                    gnd_connections.add((ic.instance_id, pin))
         
         # Write power nets
         if vcc_connections:
             f.write(f"    (net (code {self._generate_net_code()}) (name \"VCC\")\n")
-            for ref, pin in vcc_connections:
+            for ref, pin in sorted(vcc_connections):
                 f.write(f"      (node (ref {ref}) (pin {pin}))\n")
             f.write(f"    )\n")
         
         if gnd_connections:
             f.write(f"    (net (code {self._generate_net_code()}) (name \"GND\")\n")
-            for ref, pin in gnd_connections:
+            for ref, pin in sorted(gnd_connections):
                 f.write(f"      (node (ref {ref}) (pin {pin}))\n")
             f.write(f"    )\n")
         
@@ -625,7 +759,7 @@ class KiCadNetlistExporter:
         for net_name, connections in nets.items():
             if len(connections) > 1:  # Only write nets with multiple connections
                 f.write(f"    (net (code {self._generate_net_code()}) (name \"{net_name}\")\n")
-                for ref, pin in connections:
+                for ref, pin in sorted(connections):
                     f.write(f"      (node (ref {ref}) (pin {pin}))\n")
                 f.write(f"    )\n")
         
@@ -844,9 +978,10 @@ def main():
         if args.verbose:
             print(f"\nProcessing module: {name}")
         
-        # Map gates to ICs
+        # Flatten hierarchy and map gates to ICs
+        flat_gates = flatten_module_gates(module, modules)
         mapper = GateToICMapper()
-        ic_instances = mapper.map_gates_to_ics(module.gates)
+        ic_instances = mapper.map_gates_to_ics(flat_gates)
         
         if args.verbose:
             print(f"Generated {len(ic_instances)} IC instances")

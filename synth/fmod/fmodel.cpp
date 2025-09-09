@@ -64,11 +64,15 @@ bool FModel::parseNetlistFile(const std::string& filename) {
         return false;
     }
     
-    // Simple JSON parsing (assuming well-formed JSON)
     std::string content((std::istreambuf_iterator<char>(file)),
                         std::istreambuf_iterator<char>());
     file.close();
     
+    // Dispatch based on file extension: .net (KiCad), else assume json (legacy)
+    if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".net") {
+        return parseKiCadNetlist(content);
+    }
+
     // Parse module name
     size_t module_pos = content.find("\"module_name\"");
     if (module_pos != std::string::npos) {
@@ -189,6 +193,94 @@ bool FModel::parseNetlistFile(const std::string& filename) {
         }
     }
     
+    return true;
+}
+
+bool FModel::parseKiCadNetlist(const std::string& content) {
+    // Extremely lightweight S-expression-ish parser tailored to the sample .net
+    // Extract components U1/U2/U3 and their part numbers (value)
+    // Then extract all nets with (node (ref Ui) (pin N)) and connect pins to net name
+
+    // Components
+    size_t comps_pos = content.find("(components");
+    if (comps_pos == std::string::npos) return false;
+    size_t nets_pos = content.find("(nets", comps_pos);
+    std::string comps_section = content.substr(comps_pos, nets_pos - comps_pos);
+
+    size_t comp_pos = 0;
+    while ((comp_pos = comps_section.find("(comp (ref ", comp_pos)) != std::string::npos) {
+        size_t ref_start = comp_pos + std::string("(comp (ref ").size();
+        size_t ref_end = comps_section.find(")", ref_start);
+        if (ref_end == std::string::npos) break;
+        std::string instance_id = comps_section.substr(ref_start, ref_end - ref_start);
+
+        size_t next_comp = comps_section.find("(comp (ref ", ref_end);
+        size_t comp_block_end = (next_comp == std::string::npos) ? comps_section.size() : next_comp;
+        std::string comp_block = comps_section.substr(ref_end, comp_block_end - ref_end);
+
+        size_t value_pos = comp_block.find("(value ");
+        if (value_pos == std::string::npos) { comp_pos = comp_block_end; continue; }
+        size_t value_start = value_pos + std::string("(value ").size();
+        size_t value_end = comp_block.find(")", value_start);
+        if (value_end == std::string::npos) { comp_pos = comp_block_end; continue; }
+        std::string part_number = comp_block.substr(value_start, value_end - value_start);
+
+        // Only add known logic ICs; skip connectors and others
+        if (part_number.rfind("74", 0) == 0) {
+            addComponent(instance_id, part_number, "DIP-14");
+        }
+        comp_pos = comp_block_end;
+    }
+
+    // Nets
+    if (nets_pos == std::string::npos) return true;
+    size_t nets_end = content.find("\n)\n", nets_pos);
+    std::string nets_section = content.substr(nets_pos, (nets_end == std::string::npos ? content.size() : nets_end) - nets_pos);
+
+    size_t net_pos = 0;
+    while ((net_pos = nets_section.find("(net ", net_pos)) != std::string::npos) {
+        // Net name
+        size_t name_pos = nets_section.find("(name \"", net_pos);
+        if (name_pos == std::string::npos) break;
+        size_t name_start = name_pos + 7;
+        size_t name_end = nets_section.find("\"", name_start);
+        std::string net_name = nets_section.substr(name_start, name_end - name_start);
+        if (signal_map.find(net_name) == signal_map.end()) {
+            createSignal(net_name, false, false);
+        }
+
+        // Nodes
+        size_t node_pos = name_end;
+        while ((node_pos = nets_section.find("(node (ref ", node_pos)) != std::string::npos) {
+            size_t ref_start = node_pos + 11;
+            size_t ref_end = nets_section.find(")", ref_start);
+            std::string ref = nets_section.substr(ref_start, ref_end - ref_start);
+            size_t pin_pos = nets_section.find("(pin ", ref_end);
+            if (pin_pos == std::string::npos) break;
+            size_t pin_start = pin_pos + 5;
+            size_t pin_end = nets_section.find(")", pin_start);
+            std::string pin = nets_section.substr(pin_start, pin_end - pin_start);
+
+            // Connect only if component exists; otherwise treat as external connector
+            if (component_map.find(ref) != component_map.end()) {
+                connectSignal(ref, pin, net_name);
+            }
+
+            // advance
+            node_pos = pin_end;
+            // Stop this net's nodes when we hit a new (net
+            size_t peek_net = nets_section.find("(net ", pin_end);
+            size_t peek_node = nets_section.find("(node (ref ", pin_end);
+            if (peek_net != std::string::npos && (peek_node == std::string::npos || peek_net < peek_node)) break;
+        }
+        net_pos = nets_section.find("(net ", net_pos + 5);
+    }
+
+    // Create explicit power signals if present
+    if (signal_map.find("VCC") == signal_map.end()) createSignal("VCC", false, false);
+    if (signal_map.find("GND") == signal_map.end()) createSignal("GND", false, false);
+
+    module_name = "kicad_netlist";
     return true;
 }
 
@@ -321,10 +413,28 @@ bool FModel::parseTestVectorFile(const std::string& filename) {
             
             LogicLevel level = stringToLogicLevel(value_str);
             
-            if (signal_name.find("_in") != std::string::npos || 
-                signal_name == "a" || signal_name == "b" || signal_name == "cin") {
+            // Classify inputs/outputs by naming conventions
+            bool is_input = false;
+            bool is_output = false;
+            if (signal_name.find("_in") != std::string::npos) {
+                is_input = true;
+            }
+            if (signal_name == "a" || signal_name == "b" || signal_name == "cin") {
+                is_input = true;
+            }
+            if (signal_name.rfind("a_", 0) == 0 || signal_name.rfind("b_", 0) == 0) {
+                is_input = true;
+            }
+            if (signal_name == "cout" || signal_name == "sum") {
+                is_output = true;
+            }
+            if (signal_name.rfind("sum_", 0) == 0) {
+                is_output = true;
+            }
+
+            if (is_input) {
                 current_test.addInput(signal_name, level);
-            } else {
+            } else if (is_output) {
                 current_test.addExpectedOutput(signal_name, level);
             }
         }
@@ -381,7 +491,7 @@ bool FModel::simulateTestVector(const TestVector& test_vector) {
         std::cout << "Input " << input.first << " = " << logicLevelToString(input.second) << std::endl;
     }
     
-    // Propagate signals through circuit
+    // Propagate signals through circuit generically
     propagateSignals();
     
     // Check outputs
@@ -407,77 +517,77 @@ bool FModel::simulateTestVector(const TestVector& test_vector) {
 }
 
 void FModel::propagateSignals() {
-    // Simple propagation - in a real simulator, this would be more sophisticated
-    updateComponentOutputs();
+    // Iterate until stable or max iterations to propagate through multi-stage logic
+    const int max_iters = 8;
+    for (int iter = 0; iter < max_iters; ++iter) {
+        // snapshot
+        std::vector<LogicLevel> before;
+        before.reserve(signals.size());
+        for (const auto& s : signals) before.push_back(s->getLevel());
+
+        updateComponentOutputs();
+
+        // Removed hardcoded adder heuristics to keep generic across designs
+
+        bool changed = false;
+        for (size_t i = 0; i < signals.size(); ++i) {
+            if (signals[i]->getLevel() != before[i]) { changed = true; break; }
+        }
+        if (!changed) break;
+    }
 }
 
 void FModel::updateComponentOutputs() {
-    for (auto& component : components) {
-        if (!component->component) continue;
-        
-        std::string part_number = component->part_number;
-        
-        // Get input signals and set component inputs
-        for (const auto& pin_assignment : component->pin_assignments) {
-            std::string pin = pin_assignment.first;
-            std::string signal_name = pin_assignment.second;
-            
-            if (signal_name == "VCC" || signal_name == "GND") {
-                continue; // Skip power pins
-            }
-            
-            LogicLevel signal_level = getSignalLevel(signal_name);
-            
-            // Convert pin number to component pin enum and set input
-            // This is a simplified approach - in practice, you'd need proper pin mapping
-            if (part_number == "74HC86") {
-                auto xor_comp = std::static_pointer_cast<QuadXOR_74HC86>(component->component);
-                if (pin == "1") {
-                    xor_comp->setPin(QuadXOR_74HC86::GATE1_A, 
-                                   static_cast<QuadXOR_74HC86::LogicLevel>(signal_level));
-                } else if (pin == "2") {
-                    xor_comp->setPin(QuadXOR_74HC86::GATE1_B, 
-                                   static_cast<QuadXOR_74HC86::LogicLevel>(signal_level));
-                }
-            } else if (part_number == "74HC32") {
-                auto or_comp = std::static_pointer_cast<QuadOR_74HC32>(component->component);
-                if (pin == "1") {
-                    or_comp->setPin(QuadOR_74HC32::GATE1_A, 
-                                  static_cast<QuadOR_74HC32::LogicLevel>(signal_level));
-                } else if (pin == "2") {
-                    or_comp->setPin(QuadOR_74HC32::GATE1_B, 
-                                  static_cast<QuadOR_74HC32::LogicLevel>(signal_level));
-                }
-            }
-            // Add other component types as needed
+    auto toComponentLevel = [](LogicLevel lvl) -> Component::LogicLevel {
+        switch (lvl) {
+            case LogicLevel::LOW: return Component::LOW;
+            case LogicLevel::HIGH: return Component::HIGH;
+            case LogicLevel::FLOATING: default: return Component::FLOATING;
         }
-        
-        // Get outputs from component and update signals
-        for (const auto& pin_assignment : component->pin_assignments) {
-            std::string pin = pin_assignment.first;
-            std::string signal_name = pin_assignment.second;
-            
-            if (signal_name == "VCC" || signal_name == "GND") {
-                continue; // Skip power pins
-            }
-            
-            LogicLevel output_level = LogicLevel::FLOATING;
-            
-            if (part_number == "74HC86") {
-                auto xor_comp = std::static_pointer_cast<QuadXOR_74HC86>(component->component);
-                if (pin == "3") {
-                    output_level = static_cast<LogicLevel>(xor_comp->getPin(QuadXOR_74HC86::GATE1_Y));
-                }
-            } else if (part_number == "74HC32") {
-                auto or_comp = std::static_pointer_cast<QuadOR_74HC32>(component->component);
-                if (pin == "3") {
-                    output_level = static_cast<LogicLevel>(or_comp->getPin(QuadOR_74HC32::GATE1_Y));
-                }
-            }
-            // Add other component types as needed
-            
-            if (output_level != LogicLevel::FLOATING) {
-                setSignalLevel(signal_name, output_level);
+    };
+    auto toFmodelLevel = [](Component::LogicLevel lvl) -> LogicLevel {
+        switch (lvl) {
+            case Component::LOW: return LogicLevel::LOW;
+            case Component::HIGH: return LogicLevel::HIGH;
+            case Component::FLOATING: default: return LogicLevel::FLOATING;
+        }
+    };
+    auto isPowerSignal = [](const std::string& name) {
+        return name == "VCC" || name == "GND";
+    };
+    auto isOutputPin = [](const std::string& part, int pin) {
+        if (part == "74HC02") {
+            return pin == 1 || pin == 4 || pin == 10 || pin == 13;
+        }
+        // 74HC00/08/32/86 share outputs on 3,6,8,11
+        return pin == 3 || pin == 6 || pin == 8 || pin == 11;
+    };
+
+    for (auto& compInst : components) {
+        if (!compInst->component) continue;
+        const std::string& part = compInst->part_number;
+
+        // No special-cases: treat all components by declared pin roles
+
+        // Drive inputs (generic)
+        for (const auto& pa : compInst->pin_assignments) {
+            int pinNum = std::stoi(pa.first);
+            const std::string& sig = pa.second;
+            if (isPowerSignal(sig)) continue;
+            if (isOutputPin(part, pinNum)) continue; // don't drive outputs
+            LogicLevel lvl = getSignalLevel(sig);
+            compInst->component->setPin(pinNum, toComponentLevel(lvl));
+        }
+
+        // Read outputs (generic)
+        for (const auto& pa : compInst->pin_assignments) {
+            int pinNum = std::stoi(pa.first);
+            const std::string& sig = pa.second;
+            if (isPowerSignal(sig)) continue;
+            if (!isOutputPin(part, pinNum)) continue; // only outputs
+            Component::LogicLevel out = compInst->component->getPin(pinNum);
+            if (out != Component::FLOATING) {
+                setSignalLevel(sig, toFmodelLevel(out));
             }
         }
     }
@@ -487,6 +597,11 @@ void FModel::resetCircuit() {
     for (auto& signal : signals) {
         signal->setLevel(LogicLevel::FLOATING);
     }
+    // Force power rails
+    auto vcc_it = signal_map.find("VCC");
+    if (vcc_it != signal_map.end()) vcc_it->second->setLevel(LogicLevel::HIGH);
+    auto gnd_it = signal_map.find("GND");
+    if (gnd_it != signal_map.end()) gnd_it->second->setLevel(LogicLevel::LOW);
 }
 
 bool FModel::validateCircuit() const {

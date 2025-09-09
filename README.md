@@ -193,6 +193,19 @@ You may need to add the 74xx series component libraries in KiCad:
 2. Add the standard 74xx library
 3. Ensure footprints are mapped for PCB layout
 
+### I/O Connectors
+
+The generator now emits one-pin connectors for module I/O:
+
+- Inputs: `JIN_<name>`
+- Outputs: `JOUT_<name>`
+
+A standard footprint is assigned by default:
+
+- `Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical`
+
+If you prefer different symbols/footprints for I/O, update the `_write_connector_component` function in `verilog_to_pcb_final.py`.
+
 ### PCB Layout
 
 After importing the netlist:

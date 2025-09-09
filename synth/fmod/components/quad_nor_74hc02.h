@@ -1,26 +1,26 @@
 /**
- * @file quad_and_74hc08.h
- * @brief 74HC08 Quad AND gate - Component interface implementation
+ * @file quad_nor_74hc02.h
+ * @brief 74HC02 Quad NOR gate - Component interface implementation
  */
 
-#ifndef QUAD_AND_74HC08_H
-#define QUAD_AND_74HC08_H
+#ifndef QUAD_NOR_74HC02_H
+#define QUAD_NOR_74HC02_H
 
 #include "../component_base.h"
 #include <map>
 #include <string>
 #include <vector>
 
-class QuadAND_74HC08 : public Component {
+class QuadNOR_74HC02 : public Component {
 public:
     enum Pin {
-        GATE1_A = 1, GATE1_B = 2, GATE1_Y = 3,
-        GATE2_A = 4, GATE2_B = 5, GATE2_Y = 6,
-        GND = 7, GATE3_Y = 8, GATE3_A = 9, GATE3_B = 10,
-        GATE4_Y = 11, GATE4_A = 12, GATE4_B = 13, VCC = 14
+        GATE1_Y = 1, GATE1_A = 2, GATE1_B = 3,
+        GATE2_Y = 4, GATE2_A = 5, GATE2_B = 6,
+        GND = 7, GATE3_B = 8, GATE3_A = 9, GATE3_Y = 10,
+        GATE4_B = 11, GATE4_A = 12, GATE4_Y = 13, VCC = 14
     };
 
-    QuadAND_74HC08();
+    QuadNOR_74HC02();
     void setPin(int pin, LogicLevel level) override;
     LogicLevel getPin(int pin) const override;
     void setPower(bool on) override;
@@ -43,7 +43,9 @@ private:
 
     bool isInputPin(int pin) const;
     void updateOutputs();
-    LogicLevel andLogic(LogicLevel a, LogicLevel b) const;
+    LogicLevel norLogic(LogicLevel a, LogicLevel b) const;
 };
 
-#endif // QUAD_AND_74HC08_H
+#endif // QUAD_NOR_74HC02_H
+
+

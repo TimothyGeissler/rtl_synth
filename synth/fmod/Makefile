@@ -6,7 +6,12 @@ INCLUDES = -I.
 LDFLAGS = 
 
 # Source files
-SOURCES = main.cpp fmodel.cpp components.cpp
+SOURCES = main.cpp fmodel.cpp \
+	components/quad_and_74hc08.cpp \
+	components/quad_or_74hc32.cpp \
+	components/quad_nand_74hc00.cpp \
+	components/quad_nor_74hc02.cpp \
+	components/quad_xor_74hc86.cpp
 
 # Object files
 OBJECTS = $(SOURCES:.cpp=.o)
@@ -32,10 +37,10 @@ clean:
 # Run tests
 test: $(TARGET)
 	@echo "Running Full Adder Test..."
-	./$(TARGET) ../../full_adder_netlist.json test_vectors/full_adder_tests.txt
+	./$(TARGET) ../netlist/full_adder.net test_vectors/full_adder_tests.txt
 	@echo ""
 	@echo "Running 4-bit Adder Test..."
-	./$(TARGET) ../../adder_4bit_netlist.json test_vectors/adder_4bit_tests.txt
+	./$(TARGET) ../netlist/adder_4bit.net test_vectors/adder_4bit_tests.txt
 
 # Run individual component tests
 test-components:

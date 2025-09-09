@@ -7,16 +7,14 @@
 #include <iostream>
 #include <string>
 
-using namespace FModel;
-
 int main(int argc, char* argv[]) {
     std::cout << "=== Functional Model Framework Demo ===" << std::endl;
     std::cout << "Digital Circuit Simulation using 74xx Series Components" << std::endl;
     std::cout << "========================================================" << std::endl;
     
     if (argc < 3) {
-        std::cout << "Usage: " << argv[0] << " <netlist_file> <test_vectors_file>" << std::endl;
-        std::cout << "Example: " << argv[0] << " full_adder_netlist.json full_adder_tests.txt" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <netlist_file(.net)> <test_vectors_file>" << std::endl;
+        std::cout << "Example: " << argv[0] << " ../netlist/full_adder.net test_vectors/full_adder_tests.txt" << std::endl;
         return 1;
     }
     
@@ -24,7 +22,7 @@ int main(int argc, char* argv[]) {
     std::string test_vectors_file = argv[2];
     
     // Create functional model
-    FModel::FModel model;
+    ::FModel::FModel model;
     
     // Load netlist
     std::cout << "\n1. Loading Circuit Netlist..." << std::endl;

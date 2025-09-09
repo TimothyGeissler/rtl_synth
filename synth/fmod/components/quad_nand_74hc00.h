@@ -1,17 +1,17 @@
 /**
- * @file quad_and_74hc08.h
- * @brief 74HC08 Quad AND gate - Component interface implementation
+ * @file quad_nand_74hc00.h
+ * @brief 74HC00 Quad NAND gate - Component interface implementation
  */
 
-#ifndef QUAD_AND_74HC08_H
-#define QUAD_AND_74HC08_H
+#ifndef QUAD_NAND_74HC00_H
+#define QUAD_NAND_74HC00_H
 
 #include "../component_base.h"
 #include <map>
 #include <string>
 #include <vector>
 
-class QuadAND_74HC08 : public Component {
+class QuadNAND_74HC00 : public Component {
 public:
     enum Pin {
         GATE1_A = 1, GATE1_B = 2, GATE1_Y = 3,
@@ -20,7 +20,7 @@ public:
         GATE4_Y = 11, GATE4_A = 12, GATE4_B = 13, VCC = 14
     };
 
-    QuadAND_74HC08();
+    QuadNAND_74HC00();
     void setPin(int pin, LogicLevel level) override;
     LogicLevel getPin(int pin) const override;
     void setPower(bool on) override;
@@ -43,7 +43,9 @@ private:
 
     bool isInputPin(int pin) const;
     void updateOutputs();
-    LogicLevel andLogic(LogicLevel a, LogicLevel b) const;
+    LogicLevel nandLogic(LogicLevel a, LogicLevel b) const;
 };
 
-#endif // QUAD_AND_74HC08_H
+#endif // QUAD_NAND_74HC00_H
+
+
