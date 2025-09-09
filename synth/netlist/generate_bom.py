@@ -34,6 +34,51 @@ def generate_bom(netlist_file: str, output_file: str = None):
     bom_lines.append("# Bill of Materials (BOM)")
     bom_lines.append(f"# Generated from: {netlist_file}")
     bom_lines.append(f"# Module: {netlist['module_name']}\n")
+
+    # I/O Ports section
+    inputs_raw = netlist.get('inputs', [])
+    outputs_raw = netlist.get('outputs', [])
+
+    def width_of(sig):
+        try:
+            return int(sig.get('width', 1)) if sig.get('width') else 1
+        except Exception:
+            return 1
+
+    def collapse_ports(ports):
+        by_name = {}
+        for p in ports:
+            name = p.get('name')
+            if not name:
+                continue
+            w = width_of(p)
+            if name not in by_name or w > by_name[name]:
+                by_name[name] = w
+        # stable order by name
+        return [{ 'name': n, 'width': w } for n, w in sorted(by_name.items())]
+
+    inputs = collapse_ports(inputs_raw)
+    outputs = collapse_ports(outputs_raw)
+
+    total_inputs = sum(width_of(s) for s in inputs)
+    total_outputs = sum(width_of(s) for s in outputs)
+
+    bom_lines.append("## I/O Ports")
+    bom_lines.append(f"- **Inputs ({total_inputs} pins, {len(inputs)} ports)**:")
+    for s in inputs:
+        w = width_of(s)
+        if w > 1:
+            bom_lines.append(f"  - {s['name']}[{w-1}:0] ({w} pins)")
+        else:
+            bom_lines.append(f"  - {s['name']}")
+    bom_lines.append(f"- **Outputs ({total_outputs} pins, {len(outputs)} ports)**:")
+    for s in outputs:
+        w = width_of(s)
+        if w > 1:
+            bom_lines.append(f"  - {s['name']}[{w-1}:0] ({w} pins)")
+        else:
+            bom_lines.append(f"  - {s['name']}")
+    bom_lines.append("")
     
     bom_lines.append("## Components")
     bom_lines.append("| Qty | Part Number | Package | Description |")

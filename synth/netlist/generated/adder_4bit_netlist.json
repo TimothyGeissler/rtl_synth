@@ -1,0 +1,379 @@
+{
+  "module_name": "adder_4bit",
+  "inputs": [
+    {
+      "name": "a",
+      "width": 4
+    },
+    {
+      "name": "b",
+      "width": 4
+    },
+    {
+      "name": "cin",
+      "width": 1
+    },
+    {
+      "name": "a",
+      "width": 1
+    },
+    {
+      "name": "b",
+      "width": 1
+    },
+    {
+      "name": "cin",
+      "width": 1
+    }
+  ],
+  "outputs": [
+    {
+      "name": "sum",
+      "width": 4
+    },
+    {
+      "name": "cout",
+      "width": 1
+    },
+    {
+      "name": "sum",
+      "width": 1
+    },
+    {
+      "name": "cout",
+      "width": 1
+    }
+  ],
+  "ic_instances": [
+    {
+      "instance_id": "U1",
+      "part_number": "74HC86",
+      "package": "DIP-14",
+      "pin_assignments": {
+        "1": "a_0",
+        "2": "b_0",
+        "3": "fa0_tmp_l_13",
+        "4": "fa0_tmp_l_13",
+        "5": "cin",
+        "6": "sum_0",
+        "9": "a_0",
+        "10": "b_0",
+        "8": "fa0_tmp_r_22",
+        "12": "a_1",
+        "13": "b_1",
+        "11": "fa1_tmp_l_13",
+        "14": "VCC",
+        "7": "GND"
+      },
+      "gates": [
+        {
+          "type": "XOR",
+          "inputs": [
+            "a_0",
+            "b_0"
+          ],
+          "output": "fa0_tmp_l_13"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "fa0_tmp_l_13",
+            "cin"
+          ],
+          "output": "sum_0"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "a_0",
+            "b_0"
+          ],
+          "output": "fa0_tmp_r_22"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "a_1",
+            "b_1"
+          ],
+          "output": "fa1_tmp_l_13"
+        }
+      ]
+    },
+    {
+      "instance_id": "U2",
+      "part_number": "74HC86",
+      "package": "DIP-14",
+      "pin_assignments": {
+        "1": "fa1_tmp_l_13",
+        "2": "c1",
+        "3": "sum_1",
+        "4": "a_1",
+        "5": "b_1",
+        "6": "fa1_tmp_r_22",
+        "9": "a_2",
+        "10": "b_2",
+        "8": "fa2_tmp_l_13",
+        "12": "fa2_tmp_l_13",
+        "13": "c2",
+        "11": "sum_2",
+        "14": "VCC",
+        "7": "GND"
+      },
+      "gates": [
+        {
+          "type": "XOR",
+          "inputs": [
+            "fa1_tmp_l_13",
+            "c1"
+          ],
+          "output": "sum_1"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "a_1",
+            "b_1"
+          ],
+          "output": "fa1_tmp_r_22"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "a_2",
+            "b_2"
+          ],
+          "output": "fa2_tmp_l_13"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "fa2_tmp_l_13",
+            "c2"
+          ],
+          "output": "sum_2"
+        }
+      ]
+    },
+    {
+      "instance_id": "U3",
+      "part_number": "74HC86",
+      "package": "DIP-14",
+      "pin_assignments": {
+        "1": "a_2",
+        "2": "b_2",
+        "3": "fa2_tmp_r_22",
+        "4": "a_3",
+        "5": "b_3",
+        "6": "fa3_tmp_l_13",
+        "9": "fa3_tmp_l_13",
+        "10": "c3",
+        "8": "sum_3",
+        "12": "a_3",
+        "13": "b_3",
+        "11": "fa3_tmp_r_22",
+        "14": "VCC",
+        "7": "GND"
+      },
+      "gates": [
+        {
+          "type": "XOR",
+          "inputs": [
+            "a_2",
+            "b_2"
+          ],
+          "output": "fa2_tmp_r_22"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "a_3",
+            "b_3"
+          ],
+          "output": "fa3_tmp_l_13"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "fa3_tmp_l_13",
+            "c3"
+          ],
+          "output": "sum_3"
+        },
+        {
+          "type": "XOR",
+          "inputs": [
+            "a_3",
+            "b_3"
+          ],
+          "output": "fa3_tmp_r_22"
+        }
+      ]
+    },
+    {
+      "instance_id": "U4",
+      "part_number": "74HC08",
+      "package": "DIP-14",
+      "pin_assignments": {
+        "1": "a_0",
+        "2": "b_0",
+        "3": "fa0_tmp_l_17",
+        "4": "cin",
+        "5": "fa0_tmp_r_22",
+        "6": "fa0_tmp_r_20",
+        "9": "a_1",
+        "10": "b_1",
+        "8": "fa1_tmp_l_17",
+        "12": "c1",
+        "13": "fa1_tmp_r_22",
+        "11": "fa1_tmp_r_20",
+        "14": "VCC",
+        "7": "GND"
+      },
+      "gates": [
+        {
+          "type": "AND",
+          "inputs": [
+            "a_0",
+            "b_0"
+          ],
+          "output": "fa0_tmp_l_17"
+        },
+        {
+          "type": "AND",
+          "inputs": [
+            "cin",
+            "fa0_tmp_r_22"
+          ],
+          "output": "fa0_tmp_r_20"
+        },
+        {
+          "type": "AND",
+          "inputs": [
+            "a_1",
+            "b_1"
+          ],
+          "output": "fa1_tmp_l_17"
+        },
+        {
+          "type": "AND",
+          "inputs": [
+            "c1",
+            "fa1_tmp_r_22"
+          ],
+          "output": "fa1_tmp_r_20"
+        }
+      ]
+    },
+    {
+      "instance_id": "U5",
+      "part_number": "74HC08",
+      "package": "DIP-14",
+      "pin_assignments": {
+        "1": "a_2",
+        "2": "b_2",
+        "3": "fa2_tmp_l_17",
+        "4": "c2",
+        "5": "fa2_tmp_r_22",
+        "6": "fa2_tmp_r_20",
+        "9": "a_3",
+        "10": "b_3",
+        "8": "fa3_tmp_l_17",
+        "12": "c3",
+        "13": "fa3_tmp_r_22",
+        "11": "fa3_tmp_r_20",
+        "14": "VCC",
+        "7": "GND"
+      },
+      "gates": [
+        {
+          "type": "AND",
+          "inputs": [
+            "a_2",
+            "b_2"
+          ],
+          "output": "fa2_tmp_l_17"
+        },
+        {
+          "type": "AND",
+          "inputs": [
+            "c2",
+            "fa2_tmp_r_22"
+          ],
+          "output": "fa2_tmp_r_20"
+        },
+        {
+          "type": "AND",
+          "inputs": [
+            "a_3",
+            "b_3"
+          ],
+          "output": "fa3_tmp_l_17"
+        },
+        {
+          "type": "AND",
+          "inputs": [
+            "c3",
+            "fa3_tmp_r_22"
+          ],
+          "output": "fa3_tmp_r_20"
+        }
+      ]
+    },
+    {
+      "instance_id": "U6",
+      "part_number": "74HC32",
+      "package": "DIP-14",
+      "pin_assignments": {
+        "1": "fa0_tmp_l_17",
+        "2": "fa0_tmp_r_20",
+        "3": "c1",
+        "4": "fa1_tmp_l_17",
+        "5": "fa1_tmp_r_20",
+        "6": "c2",
+        "9": "fa2_tmp_l_17",
+        "10": "fa2_tmp_r_20",
+        "8": "c3",
+        "12": "fa3_tmp_l_17",
+        "13": "fa3_tmp_r_20",
+        "11": "cout",
+        "14": "VCC",
+        "7": "GND"
+      },
+      "gates": [
+        {
+          "type": "OR",
+          "inputs": [
+            "fa0_tmp_l_17",
+            "fa0_tmp_r_20"
+          ],
+          "output": "c1"
+        },
+        {
+          "type": "OR",
+          "inputs": [
+            "fa1_tmp_l_17",
+            "fa1_tmp_r_20"
+          ],
+          "output": "c2"
+        },
+        {
+          "type": "OR",
+          "inputs": [
+            "fa2_tmp_l_17",
+            "fa2_tmp_r_20"
+          ],
+          "output": "c3"
+        },
+        {
+          "type": "OR",
+          "inputs": [
+            "fa3_tmp_l_17",
+            "fa3_tmp_r_20"
+          ],
+          "output": "cout"
+        }
+      ]
+    }
+  ]
+}

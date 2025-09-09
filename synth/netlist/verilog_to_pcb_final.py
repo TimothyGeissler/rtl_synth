@@ -638,6 +638,8 @@ class KiCadNetlistExporter:
     
     def export_netlist(self, module: Module, ic_instances: List[ICInstance], output_file: str):
         """Export KiCad netlist format (.net file)"""
+        # Ensure destination directory exists
+        Path(output_file).parent.mkdir(parents=True, exist_ok=True)
         with open(output_file, 'w') as f:
             # Write netlist header
             f.write("(export (version D)\n")
@@ -681,11 +683,18 @@ class KiCadNetlistExporter:
                         seen_refs.add(ref)
             for ic in ic_instances:
                 self._write_component_netlist(f, ic)
+
+            # Add one 0.1uF decoupling capacitor per IC, referenced C1..Cn
+            cap_refs: List[str] = []
+            for idx, ic in enumerate(ic_instances, start=1):
+                cref = f"C{idx}"
+                cap_refs.append(cref)
+                self._write_capacitor_component(f, ref=cref, value="0.1uF", package="C_Disc_D5.0mm_W2.5mm_P5.00mm")
             f.write("  )\n")
             
             # Write nets
             f.write("  (nets\n")
-            self._write_nets(f, module, ic_instances)
+            self._write_nets(f, module, ic_instances, decoupling_caps=cap_refs)
             f.write("  )\n")
             
             f.write(")\n")
@@ -722,8 +731,25 @@ class KiCadNetlistExporter:
         f.write(f"      (sheetpath (names \"/\") (tstamps \"/\"))\n")
         f.write(f"      (tstamp {self._generate_timestamp()})\n")
         f.write(f"    )\n")
+
+    def _write_capacitor_component(self, f, ref: str, value: str, package: str):
+        """Write a decoupling capacitor component (2-pin)"""
+        f.write(f"    (comp (ref {ref})\n")
+        f.write(f"      (value {value})\n")
+        # Choose a common through-hole footprint for easy prototyping
+        f.write(f"      (footprint Capacitor_THT:{package})\n")
+        f.write(f"      (datasheet \"\")\n")
+        f.write(f"      (fields\n")
+        f.write(f"        (field (name F0) \"{ref}\")\n")
+        f.write(f"        (field (name F1) \"C\")\n")
+        f.write(f"        (field (name F2) \"{package}\")\n")
+        f.write(f"      )\n")
+        f.write(f"      (libsource (lib \"Device\") (part \"C\"))\n")
+        f.write(f"      (sheetpath (names \"/\") (tstamps \"/\"))\n")
+        f.write(f"      (tstamp {self._generate_timestamp()})\n")
+        f.write(f"    )\n")
     
-    def _write_nets(self, f, module: Module, ic_instances: List[ICInstance]):
+    def _write_nets(self, f, module: Module, ic_instances: List[ICInstance], decoupling_caps: Optional[List[str]] = None):
         """Write net definitions"""
         # Collect all nets and their connections
         nets = defaultdict(set)
@@ -759,6 +785,13 @@ class KiCadNetlistExporter:
                     gnd_connections.add((ic.instance_id, pin))
         
         # Write power nets
+        # Add decoupling caps to power nets
+        decoupling_caps = decoupling_caps or []
+        for cref in decoupling_caps:
+            # Capacitor pins: 1->VCC, 2->GND
+            vcc_connections.add((cref, '1'))
+            gnd_connections.add((cref, '2'))
+
         if vcc_connections:
             f.write(f"    (net (code {self._generate_net_code()}) (name \"VCC\")\n")
             for ref, pin in sorted(vcc_connections):
@@ -999,6 +1032,10 @@ def main():
         # Fallback: use the first module
         top_modules = [next(iter(modules.values()))]
     
+    # Ensure generated output folder exists
+    gen_dir = Path(__file__).parent / 'generated'
+    gen_dir.mkdir(parents=True, exist_ok=True)
+    
     # Process only the top-level module
     for module in top_modules:
         name = module.name
@@ -1019,16 +1056,16 @@ def main():
         
         # Export to KiCad schematic
         exporter = KiCadExporter()
-        output_file = f"{name}_{args.output}"
-        exporter.export_schematic(module, ic_instances, output_file)
+        output_file = gen_dir / f"{name}_{args.output}"
+        exporter.export_schematic(module, ic_instances, str(output_file))
         
         if args.verbose:
             print(f"Exported schematic to: {output_file}")
         
         # Export KiCad netlist for PCB import
         netlist_exporter = KiCadNetlistExporter()
-        netlist_file = f"{name}.net"
-        netlist_exporter.export_netlist(module, ic_instances, netlist_file)
+        netlist_file = gen_dir / f"{name}.net"
+        netlist_exporter.export_netlist(module, ic_instances, str(netlist_file))
         
         if args.verbose:
             print(f"Exported KiCad netlist to: {netlist_file}")
@@ -1050,8 +1087,7 @@ def main():
                     for ic in ic_instances
                 ]
             }
-            
-            json_file = f"{name}_netlist.json"
+            json_file = gen_dir / f"{name}_netlist.json"
             with open(json_file, 'w') as f:
                 json.dump(netlist, f, indent=2)
             
