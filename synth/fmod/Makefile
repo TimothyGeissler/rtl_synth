@@ -9,7 +9,8 @@ SOURCES = main.cpp fmodel.cpp \
 	components/quad_nand_74hc00.cpp \
 	components/quad_nor_74hc02.cpp \
 	components/quad_xor_74hc86.cpp \
-	components/quad_not_74hc04.cpp
+	components/quad_not_74hc04.cpp \
+	components/dual_dff_74hc74.cpp
 
 # Object files
 OBJECTS = $(SOURCES:.cpp=.o)

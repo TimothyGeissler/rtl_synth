@@ -198,27 +198,71 @@ class VerilogParser:
     
     def _parse_body(self, module: Module, body: str):
         """Parse module body for internal signals, gates, and instances"""
-        for line in body.split('\n'):
-            line = line.strip()
+        lines = body.split('\n')
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
             if not line or line.startswith('//'):
+                i += 1
                 continue
                 
             # Parse wire declarations
             if line.startswith('wire'):
                 self._parse_wire_declaration(module, line)
+                i += 1
+                continue
             
             # Parse assign statements (gate operations)
-            elif line.startswith('assign'):
+            if line.startswith('assign'):
                 gates = self._parse_assign_statement(line)
                 if gates:
                     module.gates.extend(gates)
+                i += 1
+                continue
+
+            # Parse simple DFF behavioral block: always @(posedge clk) q <= d;
+            if line.startswith('always'):
+                header = line
+                block = ''
+                # accumulate lines until 'end' for multi-line blocks
+                if 'begin' in line and 'end' not in line:
+                    i += 1
+                    while i < len(lines):
+                        l2 = lines[i].strip()
+                        if l2.startswith('end'):
+                            break
+                        block += ' ' + l2
+                        i += 1
+                else:
+                    block = line
+                mclk = re.search(r'posedge\s+(\w+)', header)
+                if mclk:
+                    clk = mclk.group(1)
+                    # Find all nonblocking assignments within the block
+                    for m in re.finditer(r'(\w+)\s*<=\s*(\w+)\s*;?', block):
+                        q = m.group(1)
+                        d = m.group(2)
+                        module.gates.append(Gate(gate_type='DFF', inputs=[sanitize_signal_name(d), sanitize_signal_name(clk)], output=sanitize_signal_name(q)))
+                i += 1
+                continue
             
             # Parse module instantiations
-            elif re.match(r'\w+\s+\w+\s*\(', line):
-                instance = self._parse_module_instantiation(line)
+            if re.match(r'\w+\s+\w+\s*\(', line):
+                # Capture multiline instantiation until closing ');'
+                inst_text = line
+                if not line.strip().endswith(');'):
+                    i += 1
+                    while i < len(lines):
+                        inst_text += ' ' + lines[i].strip()
+                        if inst_text.strip().endswith(');'):
+                            break
+                        i += 1
+                instance = self._parse_module_instantiation(inst_text)
                 if instance:
                     module.instances.append(instance)
-    
+                i += 1
+                continue
+            i += 1
     def _parse_wire_declaration(self, module: Module, line: str):
         """Parse wire declaration"""
         # Match wire with optional width
@@ -251,6 +295,10 @@ class VerilogParser:
         output = output.strip()
         expression = expression.strip().rstrip(';')
         
+        # Simple alias: output = identifier; -> record ALIAS (wire tie)
+        if re.match(r'^\w+$', expression):
+            return [Gate(gate_type='ALIAS', inputs=[expression], output=output)]
+
         # Parse the expression generically into gates
         gates = self._parse_boolean_expr_to_gates(expression, output)
         
@@ -471,6 +519,18 @@ def flatten_module_gates(module: Module, modules: Dict[str, Module]) -> List[Gat
     port_names_in = set(s.name for s in module.inputs)
     port_names_out = set(s.name for s in module.outputs)
     for inst in module.instances:
+        # Virtual primitive: UNIT_DFFE maps directly to a DFF gate
+        if inst.module_name == 'UNIT_DFFE':
+            # Accept common port names (D/d, CLK/clk, Q/q)
+            d_port = 'D' if 'D' in inst.connections else 'd'
+            clk_port = 'CLK' if 'CLK' in inst.connections else 'clk'
+            q_port = 'Q' if 'Q' in inst.connections else 'q'
+            if d_port in inst.connections and clk_port in inst.connections and q_port in inst.connections:
+                d_sig = sanitize_signal_name(inst.connections[d_port])
+                clk_sig = sanitize_signal_name(inst.connections[clk_port])
+                q_sig = sanitize_signal_name(inst.connections[q_port])
+                flat.append(Gate(gate_type='DFF', inputs=[d_sig, clk_sig], output=q_sig, instance_name=f"{inst.instance_name}_DFF"))
+            continue
         if inst.module_name not in modules:
             continue
         sub = modules[inst.module_name]
@@ -562,6 +622,19 @@ class GateToICMapper:
                     'vcc': '14',
                     'gnd': '7'
                 }
+            },
+            'DFF': {
+                'part_number': '74HC74',
+                'package': 'DIP-14',
+                'gates_per_ic': 2,
+                'pinout': {
+                    # Dual D-type flip-flop; using only CLK and D inputs, Q output
+                    # Unit A: D=2, CLK=3, Q=5; Unit B: D=12, CLK=11, Q=9
+                    'gate1': {'inputs': ['2', '3'], 'output': '5'},
+                    'gate2': {'inputs': ['12', '11'], 'output': '9'},
+                    'vcc': '14',
+                    'gnd': '7'
+                }
             }
         }
     
@@ -569,56 +642,54 @@ class GateToICMapper:
         """Map gates to IC components with proper pin assignments"""
         ic_instances = []
         gate_counts = defaultdict(list)
-        
-        # Group gates by type
+
+        # Group gates by type (skip ALIAS - no IC needed)
+        passthrough_links = []  # list of (dst, src)
         for gate in gates:
+            if gate.gate_type == 'ALIAS':
+                # capture for later net tie in exporter via pin_assignments-like structure
+                passthrough_links.append((gate.output, gate.inputs[0]))
+                continue
             gate_counts[gate.gate_type].append(gate)
-        
+
         # Create IC instances
         for gate_type, gate_list in gate_counts.items():
             if gate_type in self.ic_mappings:
                 mapping = self.ic_mappings[gate_type]
                 gates_per_ic = mapping['gates_per_ic']
-                
-                # Create ICs as needed
                 for ic_num in range((len(gate_list) + gates_per_ic - 1) // gates_per_ic):
                     ic = ICInstance(
                         part_number=mapping['part_number'],
                         package=mapping['package'],
                         instance_id=f"U{len(ic_instances) + 1}"
                     )
-                    
-                    # Assign gates to this IC
                     start_idx = ic_num * gates_per_ic
                     end_idx = min(start_idx + gates_per_ic, len(gate_list))
                     ic_gates = gate_list[start_idx:end_idx]
-                    
-                    # Assign pins
                     gate_names = list(mapping['pinout'].keys())
                     for i, gate in enumerate(ic_gates):
                         if i < len(gate_names):
                             gate_name = gate_names[i]
                             pinout = mapping['pinout'][gate_name]
-                            
-                            # Assign input pins
                             for j, input_signal in enumerate(gate.inputs):
                                 if j < len(pinout['inputs']):
                                     pin = pinout['inputs'][j]
                                     ic.pin_assignments[pin] = input_signal
-                            
-                            # Assign output pin
                             ic.pin_assignments[pinout['output']] = gate.output
-                            
-                            # Link gate to IC
                             gate.ic_instance = ic
                             ic.gates.append(gate)
-                    
-                    # Add power pins
                     ic.pin_assignments[mapping['pinout']['vcc']] = 'VCC'
                     ic.pin_assignments[mapping['pinout']['gnd']] = 'GND'
-                    
                     ic_instances.append(ic)
-        
+
+        # Attach passthrough_links to a synthetic ICInstance for exporter to pick up
+        if passthrough_links:
+            alias_ic = ICInstance(instance_id="ALIAS", part_number="ALIAS", package="N/A")
+            for dst, src in passthrough_links:
+                # store as pin_assignments key=dst, value=src for later net tying
+                alias_ic.pin_assignments[dst] = src
+            ic_instances.append(alias_ic)
+
         return ic_instances
 
 class KiCadNetlistExporter:
@@ -682,11 +753,14 @@ class KiCadNetlistExporter:
                         self._write_connector_component(f, ref=ref, value="Conn_01x01", package="DIP-1")
                         seen_refs.add(ref)
             for ic in ic_instances:
+                if ic.part_number == 'ALIAS':
+                    continue  # synthetic net-tie, not a real component
                 self._write_component_netlist(f, ic)
 
-            # Add one 0.1uF decoupling capacitor per IC, referenced C1..Cn
+            # Add one 0.1uF decoupling capacitor per real 74xx IC
             cap_refs: List[str] = []
-            for idx, ic in enumerate(ic_instances, start=1):
+            real_ics = [ic for ic in ic_instances if str(ic.part_number).startswith('74')]
+            for idx, _ic in enumerate(real_ics, start=1):
                 cref = f"C{idx}"
                 cap_refs.append(cref)
                 self._write_capacitor_component(f, ref=cref, value="0.1uF", package="C_Disc_D5.0mm_W2.5mm_P5.00mm")
@@ -753,6 +827,8 @@ class KiCadNetlistExporter:
         """Write net definitions"""
         # Collect all nets and their connections
         nets = defaultdict(set)
+        # Collect alias links if present
+        alias_links: List[Tuple[str, str]] = []
         
         # Add input/output nets to connector pins (pin 1)
         for signal in self._merge_signals_by_name(module.inputs):
@@ -770,6 +846,10 @@ class KiCadNetlistExporter:
         
         # Add internal nets from IC pin assignments
         for ic in ic_instances:
+            if ic.part_number == 'ALIAS':
+                for dst, src in ic.pin_assignments.items():
+                    alias_links.append((dst, src))
+                continue
             for pin, signal in ic.pin_assignments.items():
                 if signal not in ['VCC', 'GND']:
                     nets[signal].add((ic.instance_id, pin))
@@ -804,13 +884,23 @@ class KiCadNetlistExporter:
                 f.write(f"      (node (ref {ref}) (pin {pin}))\n")
             f.write(f"    )\n")
         
-        # Write signal nets
+        # Apply alias links by merging source net into destination net
+        for dst, src in alias_links:
+            if src in nets:
+                nets[dst] |= nets[src]
+                # Also include connectors already added for src (handled above)
+                # Remove the source net to avoid duplicating
+                if dst != src and src in nets:
+                    del nets[src]
+
+        # Write signal nets (include even single-connection nets to expose I/O in netlist)
         for net_name, connections in nets.items():
-            if len(connections) > 1:  # Only write nets with multiple connections
-                f.write(f"    (net (code {self._generate_net_code()}) (name \"{net_name}\")\n")
-                for ref, pin in sorted(connections):
-                    f.write(f"      (node (ref {ref}) (pin {pin}))\n")
-                f.write(f"    )\n")
+            f.write(f"    (net (code {self._generate_net_code()}) (name \"{net_name}\")\n")
+            for ref, pin in sorted(connections):
+                if ref == 'ALIAS':
+                    continue
+                f.write(f"      (node (ref {ref}) (pin {pin}))\n")
+            f.write(f"    )\n")
         
         # Add unused pins to GND (for CMOS logic, unused inputs should be tied to GND)
         self._add_unused_pins_to_gnd(f, ic_instances, nets)
@@ -846,7 +936,8 @@ class KiCadNetlistExporter:
             '74HC08': list(range(1, 15)),  # DIP-14: pins 1-14
             '74HC32': list(range(1, 15)),
             '74HC86': list(range(1, 15)),
-            '74HC04': list(range(1, 15))
+            '74HC04': list(range(1, 15)),
+            '74HC74': list(range(1, 15))
         }
         
         # Define power pins that should not be connected to GND
@@ -854,7 +945,8 @@ class KiCadNetlistExporter:
             '74HC08': [7, 14],  # GND=7, VCC=14
             '74HC32': [7, 14],
             '74HC86': [7, 14],
-            '74HC04': [7, 14]
+            '74HC04': [7, 14],
+            '74HC74': [7, 14]
         }
         
         # Collect unused pins
@@ -962,6 +1054,14 @@ $EndDescr
         
         # Map internal signals to IC pin positions
         for ic in ic_instances:
+            if ic.part_number == 'ALIAS':
+                # Place alias endpoints near each other
+                for dst, src in ic.pin_assignments.items():
+                    if dst not in signal_positions:
+                        signal_positions[dst] = (2750, 1000)
+                    if src not in signal_positions:
+                        signal_positions[src] = (2800, 1000)
+                continue
             for pin, signal in ic.pin_assignments.items():
                 if signal not in signal_positions and signal not in ['VCC', 'GND']:
                     # Calculate pin position based on IC position and pin number
@@ -971,6 +1071,15 @@ $EndDescr
         
         # Write wire connections
         for ic in ic_instances:
+            if ic.part_number == 'ALIAS':
+                # Draw short tie lines between alias pairs
+                for dst, src in ic.pin_assignments.items():
+                    if dst in signal_positions and src in signal_positions:
+                        x1, y1 = signal_positions[dst]
+                        x2, y2 = signal_positions[src]
+                        f.write("Wire Wire Line\n")
+                        f.write(f"    {x1} {y1} {x2} {y2}\n")
+                continue
             for pin, signal in ic.pin_assignments.items():
                 if signal in signal_positions:
                     ic_x, ic_y = ic.position

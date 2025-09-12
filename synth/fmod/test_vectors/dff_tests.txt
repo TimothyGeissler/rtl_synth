@@ -1,0 +1,14 @@
+[DFF: initial]
+clk = 0
+d = 0
+q = 0
+
+[DFF: capture 1]
+clk = 1
+d = 1
+q = 1
+
+[DFF: hold 1]
+clk = 0
+d = 0
+q = 1

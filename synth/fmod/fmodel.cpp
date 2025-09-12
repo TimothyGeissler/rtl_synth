@@ -39,6 +39,9 @@ void FModel::initializeComponentFactories() {
     component_factories["74HC04"] = []() -> std::shared_ptr<Component> {
         return std::make_shared<HexInverter_74HC04>();
     };
+    component_factories["74HC74"] = []() -> std::shared_ptr<Component> {
+        return std::make_shared<DualDFF_74HC74>();
+    };
 }
 
 bool FModel::loadFromNetlist(const std::string& netlist_file) {
@@ -597,6 +600,9 @@ void FModel::updateComponentOutputs() {
         }
         if (part == "74HC04") {
             return pin == 2 || pin == 4 || pin == 6 || pin == 8 || pin == 10 || pin == 12;
+        }
+        if (part == "74HC74") {
+            return pin == 5 || pin == 9; // Q outputs
         }
         // 74HC00/08/32/86 share outputs on 3,6,8,11
         return pin == 3 || pin == 6 || pin == 8 || pin == 11;

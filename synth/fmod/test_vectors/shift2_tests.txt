@@ -1,0 +1,23 @@
+[Shift2: initial]
+clk = 0
+din = 0
+q1 = 0
+q2 = 0
+
+[Shift2: first rising edge]
+clk = 1
+din = 1
+q1 = 1
+q2 = 0
+
+[Shift2: return low]
+clk = 0
+din = 0
+q1 = 1
+q2 = 0
+
+[Shift2: second rising edge]
+clk = 1
+din = 0
+q1 = 0
+q2 = 1
